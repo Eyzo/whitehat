@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>whitehat — résultat</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><a href="/">whitehat</a><span>· résultat</span></div>
+  <div class="env"><a class="badge badge-off" href="/">← nouvelle analyse</a></div>
+</header>
+
+<main>
+  <section class="card" id="head">
+    <h2 id="target">Analyse…</h2>
+    <div class="dim" id="sub"></div>
+  </section>
+
+  <section class="card" id="progressWrap">
+    <div class="prog-top"><h3 id="stage">Analyse en cours…</h3>
+      <div class="prog-meta"><span id="elapsed" class="elapsed" title="Temps écoulé">0:00</span>
+        <span id="pctNum" class="pct">0%</span></div></div>
+    <div class="progress"><div id="bar"></div></div>
+    <p class="dim" id="curMsg" style="margin:10px 0 14px"></p>
+    <ol class="steps" id="steps"></ol>
+  </section>
+
+  <div id="results" hidden>
+    <div class="viewtoggle">
+      <button class="chip active" id="btnSimple">Vue simple</button>
+      <button class="chip" id="btnTech">Vue technique</button>
+    </div>
+
+    <!-- ===== VUE SIMPLE ===== -->
+    <div id="simpleView">
+      <section class="card verdict" id="verdict"></section>
+
+      <section class="card" id="filterCard">
+        <div class="filterbar">
+          <input type="search" id="sq" placeholder="Rechercher un problème…">
+          <label class="kev-toggle"><input type="checkbox" id="sKevOnly"> déjà exploité</label>
+        </div>
+        <div class="filterrow"><span class="flabel">Gravité</span>
+          <div class="chips" id="sSevChips">
+            <button class="chip active" data-sev="ALL">Toutes</button>
+            <button class="chip" data-sev="CRITICAL">Critique</button>
+            <button class="chip" data-sev="HIGH">Important</button>
+            <button class="chip" data-sev="MEDIUM">Moyen</button>
+            <button class="chip" data-sev="LOW">Mineur</button>
+            <button class="chip" data-sev="INFO">Info</button>
+          </div>
+        </div>
+        <div class="filterrow"><span class="flabel">Type</span>
+          <div class="chips" id="sTypeChips"></div>
+        </div>
+        <div class="fcount dim" id="sCount"></div>
+      </section>
+
+      <section class="card" id="priorityCard">
+        <h2>À corriger en priorité</h2>
+        <div id="priority"></div>
+      </section>
+      <section class="card" id="othersCard">
+        <details open><summary><b>Autres points détectés</b> <span id="othersCount" class="dim"></span></summary>
+          <div id="others" style="margin-top:12px"></div></details>
+      </section>
+      <p class="ok-msg" id="noMatch" hidden>Aucun résultat pour ces filtres.</p>
+    </div>
+
+    <!-- ===== VUE TECHNIQUE ===== -->
+    <div id="techView" hidden>
+      <div class="tiles" id="tiles"></div>
+      <section class="card"><h2>Technologies détectées</h2>
+        <table><thead><tr><th>Techno</th><th>Version</th><th>Catégorie</th><th>CVE</th></tr></thead>
+          <tbody id="techBody"></tbody></table></section>
+      <section class="card"><h2>Détail technique</h2>
+        <div class="controls">
+          <input type="search" id="q" placeholder="Rechercher (CVE, mot-clé, CWE…)">
+          <div class="chips" id="sevChips">
+            <button class="chip active" data-sev="ALL">Tout</button>
+            <button class="chip" data-sev="CRITICAL">Critique</button>
+            <button class="chip" data-sev="HIGH">Élevé</button>
+            <button class="chip" data-sev="MEDIUM">Moyen</button>
+            <button class="chip" data-sev="LOW">Faible</button>
+            <button class="chip" data-sev="INFO">Info</button>
+          </div>
+          <label class="kev-toggle"><input type="checkbox" id="kevOnly"> déjà exploitées</label>
+        </div>
+        <div id="findingsWrap"></div><div id="vulnsWrap"></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="card" id="errorWrap" hidden>
+    <h2 class="status-error">L'analyse a échoué</h2>
+    <pre id="errMsg" class="dim" style="white-space:pre-wrap"></pre>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const scanId = location.pathname.split('/').pop();
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nl2br = s => esc(s).replace(/\n/g,'<br>');
+const sevCls = s => ({CRITICAL:'crit',HIGH:'high',MEDIUM:'med',LOW:'low',INFO:'info'}[(s||'').toUpperCase()]||'na');
+const isPriority = i => i.kev || i.severity==='CRITICAL' || i.severity==='HIGH'
+  || (i.kind==='exposure' && (i.severity==='HIGH'||i.severity==='MEDIUM'));
+// Regroupement des types pour les filtres
+const TYPE_OF = {cve:'soft', exposure:'expo', header:'prot', cookie:'prot', tls:'tls',
+  nuclei:'deep', wordpress:'wp', library:'soft'};
+const TYPE_LABEL = {soft:'Logiciels à mettre à jour', expo:'Fichiers exposés',
+  prot:'Protections', tls:'Chiffrement (HTTPS)', wp:'Mises à jour WordPress', deep:'Analyse approfondie'};
+
+const STAGES=[['fetch','Connexion au site'],['discovery','robots.txt & sitemap'],
+  ['crawl','Parcours des pages'],['fingerprint','Technologies'],['wordpress','Extensions WordPress'],
+  ['cve','Failles connues'],['osv','Failles des librairies'],['risk','Niveau de risque'],
+  ['audit','Protections'],['exposure','Fichiers exposés'],['nuclei','Analyse approfondie'],['done','Terminé']];
+function renderSteps(){ $('steps').innerHTML=STAGES.map(([k,l])=>`<li id="st-${k}" class="step">${l}</li>`).join(''); }
+function markStage(stage){
+  const idx=STAGES.findIndex(s=>s[0]===stage); if(idx<0) return;
+  STAGES.forEach(([k],i)=>{ const el=$('st-'+k); if(!el) return;
+    el.className='step'+(i<idx?' done':(i===idx?' active':''));});
+}
+
+let elapsedTimer=null;
+const fmtDur = sec => { sec=Math.max(0,Math.floor(sec)); const m=Math.floor(sec/60), s=sec%60;
+  return m+':'+String(s).padStart(2,'0'); };
+function startElapsed(startTs){
+  if(!startTs) return;
+  const tick=()=>{ $('elapsed').textContent=fmtDur(Date.now()/1000 - startTs); };
+  tick(); elapsedTimer=setInterval(tick,1000);
+}
+function stopElapsed(){ if(elapsedTimer){ clearInterval(elapsedTimer); elapsedTimer=null; } }
+
+async function init(){
+  const r = await (await fetch('/api/scans/'+scanId)).json();
+  $('target').textContent = r.target;
+  window.__dur = (r.finished_at && r.created_at) ? (r.finished_at - r.created_at) : null;
+  if(r.status==='done'){ showResult(r.result); }
+  else if(r.status==='error'){ showError(r.error); }
+  else { renderSteps(); startElapsed(r.created_at); openStream(); }
+}
+function openStream(){
+  const es = new EventSource('/api/scans/'+scanId+'/events');
+  es.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    $('bar').style.width=(d.pct||0)+'%';
+    $('pctNum').textContent=(d.pct||0)+'%';
+    if(d.stage) markStage(d.stage);
+    if(d.message) $('curMsg').textContent=d.message;
+    if(d.status==='done'){ es.close(); stopElapsed();
+      fetch('/api/scans/'+scanId).then(x=>x.json()).then(x=>{
+        window.__dur=(x.finished_at&&x.created_at)?(x.finished_at-x.created_at):null; showResult(x.result); }); }
+    if(d.status==='error'){ es.close(); stopElapsed();
+      fetch('/api/scans/'+scanId).then(x=>x.json()).then(x=>showError(x.error)); }
+  };
+  es.onerror = () => { es.close(); setTimeout(init,1500); };
+}
+function showError(m){ stopElapsed(); $('progressWrap').hidden=true; $('errorWrap').hidden=false; $('errMsg').textContent=m||'Erreur inconnue.'; }
+
+function showResult(res){
+  $('progressWrap').hidden=true; $('results').hidden=false;
+  window.__target = res.final_url || res.target || '';
+  const s=res.summary||{}; const g=res.grade||{};
+  const durTxt = window.__dur!=null ? ` · analysé en ${fmtDur(window.__dur)}` : '';
+  $('sub').innerHTML = `${esc(res.final_url)} · ${res.pages_crawled} page(s) analysée(s)${durTxt}`;
+
+  // --- verdict ---
+  $('verdict').className='card verdict v-'+(g.color||'na');
+  $('verdict').innerHTML =
+    `<div class="gcircle gchip-${g.color||'na'}">${esc(g.grade||'?')}<small>${g.score??''}/100</small></div>
+     <div class="vtext"><div class="vlevel">${esc(g.level||'')}</div>
+       <div class="vsum">${esc(g.summary||'')}</div></div>`;
+
+  // --- issues ---
+  const issues=res.issues||[];
+  const prio=issues.filter(isPriority), others=issues.filter(i=>!isPriority(i));
+  $('priority').innerHTML = prio.length ? prio.map(issueCard).join('')
+    : '<p class="ok-msg">✓ Aucun problème prioritaire détecté. Continuez à maintenir vos logiciels à jour.</p>';
+  $('othersCard').hidden = !others.length;
+  $('othersCount').textContent = others.length? `(${others.length})` : '';
+  $('others').innerHTML = others.map(issueCard).join('');
+
+  // --- filtres de la vue simple ---
+  buildTypeChips(issues);
+  wireSimpleFilters();
+
+  // --- vue technique ---
+  renderTech(res);
+}
+
+function issueCard(i){
+  const cls=sevCls(i.severity);
+  const kev = i.kev? '<span class="badge-kev">déjà exploité</span>':'';
+  const cnt = i.count>1? `<span class="pill pill-na">${i.count} failles</span>`:'';
+  const tech = i.technical? `<details class="refs"><summary>Détails techniques</summary>
+      <div class="tech-detail">${nl2br(i.technical)}</div>
+      ${(i.references||[]).length?'<ul>'+i.references.map(u=>`<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></li>`).join('')+'</ul>':''}
+    </details>`:'';
+  const typ=TYPE_OF[i.kind]||'deep';
+  const blob=esc(((i.title||'')+' '+(i.what||'')+' '+(i.risk||'')+' '+(i.action||'')+' '+(i.technical||'')).toLowerCase());
+  return `<div class="issue sev-${cls}" data-sev="${(i.severity||'INFO').toUpperCase()}" data-kind="${typ}" data-kev="${i.kev?1:0}" data-text="${blob}">
+    <div class="issue-head"><span class="pill pill-${cls}">${esc(i.severity_label)}</span>${kev}${cnt}
+      <span class="issue-title">${esc(i.title)}</span></div>
+    <div class="issue-grid">
+      <div><span class="k">Ce que c'est</span>${esc(i.what)}</div>
+      <div><span class="k">Le risque</span>${esc(i.risk)}</div>
+      <div class="fix"><span class="k">Que faire</span>${esc(i.action)}</div>
+    </div>${recheckControl(i)}${tech}</div>`;
+}
+
+function recheckControl(i){
+  if(!i.recheck) return '';
+  const p = i.proof || {};
+  const src = p.source ? `<div class="rc-src dim">D'où vient la preuve : ${esc(p.source)}</div>` : '';
+  const manual = p.manual ? `<div class="rc-manual"><span class="k">Constater soi-même</span><code class="vcmd">${esc(p.manual)}</code></div>` : '';
+  const link = p.link ? `<a class="rc-link" href="${esc(p.link)}" target="_blank" rel="noopener noreferrer">Ouvrir la ressource ↗</a>` : '';
+  return `<div class="verify">
+    <div class="k">Preuve &amp; contrôle</div>
+    <code class="vcmd rc-evidence">${esc(i.evidence||'(voir détails)')}</code>
+    ${src}${manual}
+    <div class="rc-actions">
+      <button class="btn-sm" data-rc="${esc(JSON.stringify(i.recheck))}" onclick="recheckPoint(this)">Revérifier</button>
+      ${link}
+      <span class="verify-res dim"></span></div>
+    <div class="dim" style="font-size:11.5px;margin-top:4px">« Revérifier » relance ce contrôle et met la preuve à jour.</div>
+  </div>`;
+}
+async function recheckPoint(btn){
+  const box=btn.closest('.verify'); const out=box.querySelector('.verify-res');
+  const ev=box.querySelector('.rc-evidence');
+  let d; try{ d=JSON.parse(btn.dataset.rc); }catch(e){ return; }
+  btn.disabled=true; out.className='verify-res dim'; out.textContent=' contrôle en cours…';
+  try{
+    const r=await (await fetch('/api/recheck',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({scan_id:scanId, descriptor:d})})).json();
+    const map={present:['⚠ toujours présent','vr-bad'], fixed:['✓ corrigé','vr-ok'],
+      unknown:['indéterminé','vr-na'], error:['— erreur','vr-na']};
+    const [txt,cls]=map[r.status]||['—','vr-na'];
+    out.className='verify-res '+cls; out.textContent=' '+txt;
+    if(ev && r.evidence){ ev.textContent=r.evidence; }
+  }catch(e){ out.className='verify-res vr-na'; out.textContent=' erreur réseau'; }
+  btn.disabled=false;
+}
+
+// Construit les puces de type présentes dans les résultats (+ compteur)
+function buildTypeChips(issues){
+  const counts={};
+  issues.forEach(i=>{ const t=TYPE_OF[i.kind]||'deep'; counts[t]=(counts[t]||0)+1; });
+  const chips=['<button class="chip active" data-type="ALL">Tous</button>'];
+  Object.keys(TYPE_LABEL).forEach(t=>{ if(counts[t])
+    chips.push(`<button class="chip" data-type="${t}">${TYPE_LABEL[t]} <span class="chipn">${counts[t]}</span></button>`); });
+  $('sTypeChips').innerHTML=chips.join('');
+}
+
+function wireSimpleFilters(){
+  const sq=$('sq'), kev=$('sKevOnly');
+  let sev='ALL', typ='ALL';
+  const cards=[].slice.call(document.querySelectorAll('#simpleView .issue'));
+  function apply(){
+    const term=(sq.value||'').trim().toLowerCase(), onlyKev=kev.checked;
+    let shown=0;
+    cards.forEach(c=>{
+      const okS=sev==='ALL'||c.dataset.sev===sev;
+      const okT=typ==='ALL'||c.dataset.kind===typ;
+      const okK=!onlyKev||c.dataset.kev==='1';
+      const okX=!term||c.dataset.text.indexOf(term)>=0;
+      const vis=okS&&okT&&okK&&okX; c.style.display=vis?'':'none'; if(vis)shown++;
+    });
+    // masque les sections vidées par le filtre
+    const pv=$('priority').querySelectorAll('.issue:not([style*="display: none"])').length;
+    const hasOk=!!$('priority').querySelector('.ok-msg');
+    $('priorityCard').hidden = !(pv || hasOk);
+    const ov=$('others').querySelectorAll('.issue:not([style*="display: none"])').length;
+    $('othersCard').hidden = !ov;
+    const filtering=(sev!=='ALL'||typ!=='ALL'||onlyKev||term);
+    $('sCount').textContent = filtering? `${shown} résultat${shown>1?'s':''} affiché${shown>1?'s':''}` : '';
+    $('noMatch').hidden = shown>0 || cards.length===0;
+  }
+  function chipGroup(container, on){
+    container.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
+      container.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+      ch.classList.add('active'); on(ch); apply();
+    });
+  }
+  chipGroup($('sSevChips'), ch=>sev=ch.dataset.sev);
+  chipGroup($('sTypeChips'), ch=>typ=ch.dataset.type);
+  sq.oninput=apply; kev.onchange=apply;
+  apply();
+}
+
+/* ===== Vue technique (experts) ===== */
+function renderTech(res){
+  const s=res.summary||{}, sev=s.severity||{};
+  const tile=(n,l,c)=>`<div class="tile"><div class="tile-n ${c}">${n||0}</div><div class="tile-l">${l}</div></div>`;
+  $('tiles').innerHTML = tile(sev.CRITICAL,'Critiques','c-crit')+tile(sev.HIGH,'Élevées','c-high')+
+    tile(sev.MEDIUM,'Moyennes','c-med')+tile(sev.LOW,'Faibles','c-low')+tile(sev.INFO,'Info','c-info')+tile(s.kev,'Exploitées','c-kev');
+  $('techBody').innerHTML=(res.technologies||[]).map(t=>{
+    const n=(t.vulnerabilities||[]).length;
+    let cell=t.cpe_vendor?(n?`<span class="pill pill-bad">${n}</span>`:`<span class="pill pill-ok">0</span>`):'<span class="dim">—</span>';
+    return `<tr><td><b>${esc(t.name)}</b></td><td>${t.version?esc(t.version):'<span class=dim>?</span>'}</td>`+
+      `<td>${esc((t.categories||[]).join(', ')||'—')}</td><td>${cell}</td></tr>`;
+  }).join('')||'<tr><td colspan="4" class="dim">Aucune.</td></tr>';
+  const catLabel={header:'En-têtes',cookie:'Cookies',tls:'TLS',exposure:'Expositions',nuclei:'Nuclei',wordpress:'WordPress',library:'Librairies'};
+  const byCat={}; (res.findings||[]).forEach(f=>{(byCat[f.category]=byCat[f.category]||[]).push(f);});
+  $('findingsWrap').innerHTML=Object.keys(byCat).map(c=>`<div class="tech-block"><h3>${catLabel[c]||c} <span class="count">${byCat[c].length}</span></h3>${byCat[c].map(findingItem).join('')}</div>`).join('');
+  let vh=''; (res.technologies||[]).forEach(t=>{
+    const vs=(t.vulnerabilities||[]).slice().sort((a,b)=>(b.risk_score||0)-(a.risk_score||0));
+    if(vs.length) vh+=`<div class="tech-block"><h3>${esc(t.name)} ${t.version?esc(t.version):''} <span class="count">${vs.length} CVE</span></h3>${vs.map(cveItem).join('')}</div>`;
+  });
+  $('vulnsWrap').innerHTML=vh;
+  wireFilters();
+}
+function findingItem(f){const cls=sevCls(f.severity);const blob=esc((f.title+' '+f.detail+' '+f.source).toLowerCase());
+  const refs=(f.references||[]).slice(0,6).map(u=>`<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></li>`).join('');
+  return `<details class="item sev-${cls}" data-sev="${(f.severity||'INFO').toUpperCase()}" data-kev="0" data-text="${blob}">
+    <summary><span class="pill pill-${cls}">${esc(f.severity)}</span><b>${esc(f.title)}</b><span class="dim" style="margin-left:auto">${esc(f.source)}</span></summary>
+    <div class="item-body"><p class="desc">${esc(f.detail)}</p>
+    ${f.remediation?`<div class="guide g-fix"><div class="g-row"><span class="k">Remédiation</span>${esc(f.remediation)}</div></div>`:''}
+    ${recheckControl(f)}
+    ${refs?`<details class="refs"><summary>Références</summary><ul>${refs}</ul></details>`:''}</div></details>`;}
+function cveItem(v){const cls=sevCls(v.cvss_severity);const g=v.exploit_guide;
+  const blob=esc((v.cve_id+' '+v.description+' '+(v.cwe||[]).join(' ')).toLowerCase());
+  const refs=((v.exploit_refs&&v.exploit_refs.length?v.exploit_refs:v.references)||[]).slice(0,8).map(u=>`<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></li>`).join('');
+  const kev=v.known_exploited?'<span class="badge-kev">⚠ EXPLOITÉE</span>':'';
+  const epss=(v.epss!=null)?`<span class="epss">EPSS ${(v.epss*100).toFixed(1)}%</span>`:'';
+  const risk=(v.risk_score!=null)?`<span class="risk">risque ${v.risk_score}</span>`:'';
+  return `<details class="item sev-${cls}" data-sev="${(v.cvss_severity||'INFO').toUpperCase()}" data-kev="${v.known_exploited?1:0}" data-text="${blob}">
+    <summary><span class="pill pill-${cls}">${esc(v.cvss_severity||'NA')} ${v.cvss_score??'?'}</span><span class="cve-id">${esc(v.cve_id)}</span>${risk}${epss}${kev}</summary>
+    <div class="item-body"><p class="desc">${esc(v.description)}</p>
+    ${(v.cwe||[]).length?`<div class="meta"><b>CWE :</b> ${v.cwe.map(c=>`<code>${esc(c)}</code>`).join(' ')}</div>`:''}
+    ${g?`<div class="guide"><div class="g-type">${esc(g.cwe_title)}</div>
+      <div class="g-row"><span class="k">Mécanisme</span>${esc(g.mechanism)}</div>
+      <div class="g-row"><span class="k">Reproduction (cadre autorisé)</span>${esc(g.reproduction)}</div>
+      <div class="g-row g-fix"><span class="k">Remédiation</span>${esc(g.remediation)}</div></div>`:''}
+    ${verifyBlock(v)}
+    ${refs?`<details class="refs"><summary>Références</summary><ul>${refs}</ul></details>`:''}</div></details>`;}
+
+function verifyBlock(v){
+  if(!v.verify_available) return '';
+  const cmd = `nuclei -u ${window.__target||'<cible>'} -id ${v.cve_id}`;
+  return `<div class="verify">
+    <div class="k">Test de vérification (non destructif)</div>
+    <div class="dim" style="margin:2px 0 6px">Confirme si la faille est réellement présente sur la cible ; relancez après correctif pour vérifier qu'elle a disparu.</div>
+    <code class="vcmd">${esc(cmd)}</code>
+    <div style="margin-top:8px"><button class="btn-sm" onclick="verifyCve(this,'${esc(v.cve_id)}')">Vérifier maintenant</button>
+      <span class="verify-res dim"></span></div></div>`;
+}
+async function verifyCve(btn, cve){
+  const box = btn.closest('.verify'); const out = box.querySelector('.verify-res');
+  btn.disabled=true; out.className='verify-res dim'; out.textContent=' vérification en cours…';
+  try{
+    const r = await (await fetch('/api/verify',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({scan_id:scanId, cve})})).json();
+    const map={confirmed:['⚠ CONFIRMÉ présent','vr-bad'],
+      not_confirmed:['✓ non confirmé (absent ou corrigé)','vr-ok'],
+      unavailable:['aucun test pour cette CVE','vr-na'], error:['— '+(r.evidence||'erreur'),'vr-na']};
+    const [txt,cls]=map[r.status]||['—','vr-na'];
+    out.className='verify-res '+cls; out.textContent=' '+txt+(r.evidence&&r.status==='confirmed'?` (${r.evidence})`:'');
+  }catch(e){ out.className='verify-res vr-na'; out.textContent=' erreur réseau'; }
+  btn.disabled=false;
+}
+function wireFilters(){const q=$('q'),kevOnly=$('kevOnly');let sev='ALL';
+  const items=[].slice.call(document.querySelectorAll('#techView .item'));
+  function apply(){const term=(q.value||'').trim().toLowerCase(),ok=kevOnly.checked;
+    items.forEach(c=>{const okS=sev==='ALL'||c.getAttribute('data-sev')===sev,okK=!ok||c.getAttribute('data-kev')==='1',
+      okT=!term||c.getAttribute('data-text').indexOf(term)>=0;c.style.display=(okS&&okK&&okT)?'':'none';});
+    document.querySelectorAll('#techView .tech-block').forEach(b=>{b.style.display=b.querySelectorAll('.item:not([style*="display: none"])').length?'':'none';});}
+  document.querySelectorAll('#sevChips .chip').forEach(ch=>ch.onclick=()=>{document.querySelectorAll('#sevChips .chip').forEach(x=>x.classList.remove('active'));ch.classList.add('active');sev=ch.getAttribute('data-sev');apply();});
+  q.oninput=apply;kevOnly.onchange=apply;}
+
+$('btnSimple').onclick=()=>{$('btnSimple').classList.add('active');$('btnTech').classList.remove('active');$('simpleView').hidden=false;$('techView').hidden=true;};
+$('btnTech').onclick=()=>{$('btnTech').classList.add('active');$('btnSimple').classList.remove('active');$('techView').hidden=false;$('simpleView').hidden=true;};
+init();
+</script>
+</body>
+</html>

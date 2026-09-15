@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>whitehat — analyse de sécurité</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><a href="/">whitehat</a><span>· analyse de sécurité</span></div>
+  <div class="env" id="env"></div>
+  <a class="badge badge-off" href="/guide" style="margin-left:8px">? Guide</a>
+</header>
+
+<main>
+  <section class="card hero">
+    <h1>Analysez la sécurité d'un site</h1>
+    <p class="lead">Entrez l'adresse d'un site. whitehat identifie les logiciels utilisés,
+      les failles connues et les points à améliorer — et vous explique quoi faire, simplement.</p>
+
+    <div class="analyze">
+      <input type="text" id="target" placeholder="ex. monsite.fr" autocomplete="off">
+      <button class="btn btn-lg" id="launch">Analyser</button>
+    </div>
+
+    <label class="authz">
+      <input type="checkbox" id="authorized">
+      <span>Je confirme avoir le droit d'analyser ce site (il m'appartient ou j'ai une autorisation écrite).</span>
+    </label>
+    <div id="err" class="status-error"></div>
+
+    <details class="adv">
+      <summary>Options avancées</summary>
+      <div class="opts">
+        <label><input type="checkbox" id="crawl" checked> Explorer plusieurs pages</label>
+        <label><input type="checkbox" id="use_sitemap" checked> Utiliser robots.txt / sitemap</label>
+        <label><input type="checkbox" id="do_cve" checked> Rechercher les failles connues</label>
+        <label><input type="checkbox" id="do_osv" checked> Failles des librairies (OSV)</label>
+        <label><input type="checkbox" id="do_retire" checked> Librairies minifiées (signatures)</label>
+        <label><input type="checkbox" id="do_deps" checked> Dépendances (manifestes exposés)</label>
+        <label><input type="checkbox" id="do_wordpress" checked> Extensions WordPress</label>
+        <label><input type="checkbox" id="do_cms" checked> Extensions Drupal/Joomla/PrestaShop</label>
+        <label><input type="checkbox" id="do_audit" checked> Vérifier les protections (HTTPS, en-têtes…)</label>
+        <label><input type="checkbox" id="do_exposures" checked> Chercher des fichiers exposés</label>
+        <label><input type="checkbox" id="do_nuclei"> Analyse approfondie (Nuclei) <span id="nucleiHint" class="dim"></span></label>
+        <label><input type="checkbox" id="verify_tls" checked> Vérifier le certificat</label>
+      </div>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>Analyses récentes</h2>
+    <div id="history" class="hist"><p class="dim">Chargement…</p></div>
+  </section>
+
+  <footer>Analyse à n'effectuer que sur des sites vous appartenant ou pour lesquels vous êtes autorisé.</footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function loadEnv(){
+  try{
+    const e = await (await fetch('/api/env')).json();
+    $('env').innerHTML =
+      `<span class="badge ${e.nvd_key?'badge-on':'badge-off'}">Base de failles: ${e.nvd_key?'clé active':'ok'}</span>`+
+      `<span class="badge ${e.nuclei_available?'badge-on':'badge-off'}">Analyse approfondie: ${e.nuclei_available?'dispo':'non installée'}</span>`;
+    if(!e.nuclei_available){ $('do_nuclei').disabled=true; $('nucleiHint').textContent='(non installée)'; }
+  }catch(_){}
+}
+
+function fmtDate(ts){ return ts? new Date(ts*1000).toLocaleString('fr-FR') : '—'; }
+
+function gradeChip(s){
+  if(!s || !s.grade) return '<span class="gchip gchip-na">?</span>';
+  return `<span class="gchip gchip-${s.color||'na'}">${s.grade}</span>`;
+}
+
+function histLine(r){
+  const s=r.summary||{};
+  let state;
+  if(r.status==='running'||r.status==='queued') state=`<span class="status-running">analyse… ${r.pct||0}%</span>`;
+  else if(r.status==='error') state=`<span class="status-error">échec</span>`;
+  else state = s.important ? `<span class="c-high">${s.important} problème(s) important(s)</span>`
+                           : `<span class="c-low">aucun problème majeur</span>`;
+  return `<a class="hrow" href="/scan/${r.id}">
+      ${r.status==='done'?gradeChip(s):'<span class="gchip gchip-na">·</span>'}
+      <div class="hmain"><div class="htarget">${esc(r.target)}</div>
+        <div class="hsub dim">${fmtDate(r.created_at)} · ${state}</div></div>
+      <button class="btn-sm btn-ghost" onclick="event.preventDefault();del('${r.id}')">suppr.</button>
+    </a>`;
+}
+
+async function loadHistory(){
+  const rows = await (await fetch('/api/scans')).json();
+  $('history').innerHTML = rows.length ? rows.map(histLine).join('')
+    : '<p class="dim">Aucune analyse pour le moment.</p>';
+}
+
+async function del(id){ if(!confirm('Supprimer cette analyse ?'))return; await fetch('/api/scans/'+id,{method:'DELETE'}); loadHistory(); }
+
+$('launch').onclick = async () => {
+  $('err').textContent='';
+  const body = {
+    target: $('target').value.trim(), authorized: $('authorized').checked,
+    crawl:$('crawl').checked, use_sitemap:$('use_sitemap').checked,
+    do_cve:$('do_cve').checked, do_osv:$('do_osv').checked, do_retire:$('do_retire').checked,
+    do_deps:$('do_deps').checked, do_wordpress:$('do_wordpress').checked, do_cms:$('do_cms').checked,
+    do_audit:$('do_audit').checked, do_exposures:$('do_exposures').checked,
+    do_nuclei:$('do_nuclei').checked, verify_tls:$('verify_tls').checked,
+  };
+  if(!body.target){ $('err').textContent='Entrez l\'adresse d\'un site.'; return; }
+  if(!body.authorized){ $('err').textContent='Cochez la case d\'autorisation pour lancer l\'analyse.'; return; }
+  $('launch').disabled=true;
+  try{
+    const res=await fetch('/api/scans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await res.json();
+    if(!res.ok){ $('err').textContent=data.detail||'Erreur.'; $('launch').disabled=false; return; }
+    location.href='/scan/'+data.id;
+  }catch(e){ $('err').textContent=String(e); $('launch').disabled=false; }
+};
+
+$('target').addEventListener('keydown',e=>{ if(e.key==='Enter') $('launch').click(); });
+loadEnv(); loadHistory(); setInterval(loadHistory,3000);
+</script>
+</body>
+</html>

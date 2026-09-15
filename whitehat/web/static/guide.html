@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>whitehat — guide d'utilisation</title>
+<link rel="stylesheet" href="/static/app.css">
+<style>
+.guide-main{max-width:820px} .guide-main h2{margin-top:6px}
+.guide-main h3{margin:22px 0 6px;font-size:15px}
+.guide-main p,.guide-main li{color:var(--ink)} .guide-main .dim{color:var(--muted)}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
+  border-radius:50%;background:var(--accent);color:#fff;font-weight:800;margin-right:8px;flex:none}
+.gstep{display:flex;gap:4px;align-items:flex-start;margin:12px 0}
+.legend{display:flex;gap:8px;align-items:center;margin:6px 0}
+.faq summary{cursor:pointer;font-weight:600;padding:8px 0}
+.note{background:rgba(37,99,235,.08);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:14px 0}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><a href="/">whitehat</a><span>· guide d'utilisation</span></div>
+  <div class="env"><a class="badge badge-off" href="/">← accueil</a></div>
+</header>
+
+<main class="guide-main">
+  <section class="card">
+    <h2>À quoi sert whitehat ?</h2>
+    <p>whitehat analyse un site web pour repérer les <b>logiciels qu'il utilise</b>,
+      les <b>failles de sécurité connues</b> qui les concernent, et les
+      <b>protections manquantes</b>. Il vous donne une <b>note globale</b> et une
+      liste d'actions concrètes, expliquées simplement.</p>
+    <div class="note">⚠️ <b>Important :</b> n'analysez que des sites qui vous
+      appartiennent ou pour lesquels vous avez une autorisation écrite. Analyser
+      le site d'autrui sans accord est illégal.</div>
+  </section>
+
+  <section class="card">
+    <h2>Comment lancer une analyse</h2>
+    <div class="gstep"><span class="step-num">1</span>
+      <div>Sur l'accueil, tapez l'adresse du site (ex. <code>monsite.fr</code>).</div></div>
+    <div class="gstep"><span class="step-num">2</span>
+      <div>Cochez la case confirmant que vous êtes <b>autorisé</b> à l'analyser.</div></div>
+    <div class="gstep"><span class="step-num">3</span>
+      <div>Cliquez sur <b>Analyser</b>. Une barre de progression affiche les étapes
+        (connexion, parcours des pages, recherche de failles…).</div></div>
+    <div class="gstep"><span class="step-num">4</span>
+      <div>À la fin, le rapport s'affiche automatiquement avec la note et les
+        points à corriger.</div></div>
+  </section>
+
+  <section class="card">
+    <h2>Lire le rapport</h2>
+    <h3>La note (A → F)</h3>
+    <p>Elle résume l'état de sécurité du site en un coup d'œil :</p>
+    <div class="legend"><span class="gchip gchip-ok">A</span><span>Très bonne / bonne sécurité</span></div>
+    <div class="legend"><span class="gchip gchip-med">C</span><span>Sécurité moyenne, points à améliorer</span></div>
+    <div class="legend"><span class="gchip gchip-high">D</span><span>Sécurité insuffisante</span></div>
+    <div class="legend"><span class="gchip gchip-crit">F</span><span>Sécurité préoccupante, à traiter</span></div>
+
+    <h3>« À corriger en priorité »</h3>
+    <p>Les problèmes les plus importants, chacun expliqué en trois points :</p>
+    <ul>
+      <li><b>Ce que c'est</b> — le problème en langage simple.</li>
+      <li><b>Le risque</b> — pourquoi ça compte.</li>
+      <li><b>Que faire</b> — l'action concrète pour corriger.</li>
+    </ul>
+    <p class="dim">L'étiquette « déjà exploité » signale une faille activement
+      utilisée par des attaquants : à traiter en urgence.</p>
+
+    <h3>Vue simple / Vue technique</h3>
+    <p>La <b>Vue simple</b> (par défaut) suffit à la plupart des gens. La
+      <b>Vue technique</b> montre le détail pour les experts (identifiants CVE,
+      scores CVSS, probabilité d'exploitation EPSS, en-têtes HTTP…).</p>
+  </section>
+
+  <section class="card">
+    <h2>Options avancées</h2>
+    <ul>
+      <li><b>Explorer plusieurs pages</b> — parcourt le site (guidé par le
+        <code>robots.txt</code> et le <code>sitemap.xml</code>) pour mieux
+        détecter les technologies.</li>
+      <li><b>Rechercher les failles connues</b> — interroge les bases publiques
+        de vulnérabilités (NVD, OSV).</li>
+      <li><b>Vérifier les protections</b> — HTTPS, certificat, en-têtes de
+        sécurité, cookies.</li>
+      <li><b>Chercher des fichiers exposés</b> — fichiers sensibles laissés
+        accessibles par erreur (sauvegardes, <code>.git</code>, <code>.env</code>…).</li>
+      <li><b>Analyse approfondie (Nuclei)</b> — couverture maximale via des
+        milliers de tests. Nécessite d'installer l'outil Nuclei.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Questions fréquentes</h2>
+    <details class="faq"><summary>L'analyse est lente, est-ce normal ?</summary>
+      <p class="dim">La recherche de failles interroge des bases publiques qui
+        limitent le débit. Ajouter une clé API NVD (gratuite) accélère
+        nettement. Sans clé, comptez quelques minutes.</p></details>
+    <details class="faq"><summary>whitehat modifie-t-il le site analysé ?</summary>
+      <p class="dim">Non. Il consulte les pages comme le ferait un navigateur et
+        ne tente aucune action destructrice.</p></details>
+    <details class="faq"><summary>Une note F veut dire que le site va être piraté ?</summary>
+      <p class="dim">Non, mais qu'il présente des faiblesses connues à corriger.
+        Suivez la liste « À corriger en priorité », en commençant par le haut.</p></details>
+    <details class="faq"><summary>Puis-je partager le rapport ?</summary>
+      <p class="dim">Le rapport reste sur votre machine. Vous pouvez transmettre
+        la liste d'actions à la personne qui gère le site.</p></details>
+  </section>
+
+  <footer>whitehat · analyse à n'effectuer que sur des sites autorisés.</footer>
+</main>
+</body>
+</html>

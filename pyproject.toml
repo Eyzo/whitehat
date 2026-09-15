@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whitehat"
+version = "0.1.0"
+description = "Scanner de technologies web + enrichissement CVE (recon autorisé)"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.31",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+]
+
+[project.scripts]
+whitehat = "whitehat.cli:main"
+whitehat-web = "whitehat.web.server:main"
+
+[tool.setuptools.packages.find]
+include = ["whitehat*"]
