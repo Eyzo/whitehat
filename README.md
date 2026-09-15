@@ -29,17 +29,39 @@ remédiation**, avec les références publiques (advisories, PoC, ExploitDB).
                        rapport console / JSON / Markdown
 ```
 
-## Installation
-
-L'outil requiert `requests` et `rich`.
+## Démarrage rapide (local)
 
 ```bash
-# option A : installation éditable (fournit la commande `whitehat`)
-python3 -m pip install -e .
+# 1) récupérer le projet
+git clone git@github.com:Eyzo/whitehat.git
+cd whitehat
 
-# option B : dépendances seules, exécution en module
-python3 -m pip install -r requirements.txt
+# 2) environnement + dépendances (requests, rich, fastapi, uvicorn + les commandes)
+python3 -m venv .venv
+source .venv/bin/activate            # Windows : .venv\Scripts\activate
+pip install -e ".[web]"
+
+# 3) lancer la console web
+whitehat-web                          # → http://127.0.0.1:8787
 ```
+
+Ouvre ensuite **http://127.0.0.1:8787** dans ton navigateur. Options utiles :
+`whitehat-web --port 8788` pour changer de port.
+
+> Si `python3 -m venv` échoue : `sudo apt install python3-venv python3-pip`, puis
+> recommence à l'étape 2.
+
+Sans installer les commandes, tu peux aussi faire :
+
+```bash
+pip install -r requirements.txt
+python3 -m whitehat.web.server        # console web
+python3 -m whitehat exemple.com       # ligne de commande
+```
+
+Rappels : le serveur écoute en **local uniquement** (`127.0.0.1`), les scans sont
+enregistrés dans `~/.local/share/whitehat/scans.db`, et l'analyse ne doit viser
+que des cibles **autorisées**.
 
 ### Clé API NVD (recommandée)
 
@@ -59,8 +81,7 @@ Lance les scans et consulte les rapports depuis le navigateur, avec historique,
 progression en temps réel et priorisation par risque.
 
 ```bash
-python3 -m pip install -e ".[web]"     # backend web (FastAPI + uvicorn)
-whitehat-web                            # → http://127.0.0.1:8787
+whitehat-web                            # → http://127.0.0.1:8787  (install : voir « Démarrage rapide »)
 # ou : python3 -m whitehat.web.server --port 8787
 ```
 
